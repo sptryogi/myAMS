@@ -149,7 +149,7 @@ with tab6:
     if not shop_name:
         st.warning("Belum ada toko.")
     else:
-        selected_shop_conv = st.selectbox("Pilih Toko untuk Conversion", shop_names, key="shop_conv")
+        selected_shop_conv = st.selectbox("Pilih Toko untuk Conversion", shop_name, key="shop_conv")
 
         col_c1, col_c2 = st.columns(2)
         with col_c1:
