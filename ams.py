@@ -79,6 +79,10 @@ def save_report_to_db(shop_name, date_range, excel_bytes):
         "created_at": "now()"
     }).execute()
 
+def get_report_history(shop_name):
+    res = supabase.table("shopee_reports").select("*").eq("shop_name", shop_name).order("created_at", desc=True).limit(10).execute()
+    return res.data
+    
 # ===============================
 # UI
 # ===============================
