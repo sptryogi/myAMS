@@ -1,0 +1,9 @@
+streamlit
+supabase
+pandas
+openpyxl
+numpy
+xlsxwriter
+rapidfuzz
+pdfplumber
+xlsxwriter
