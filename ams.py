@@ -146,7 +146,7 @@ with tab6:
     st.header("🔁 Seller Conversion")
     st.info("Menarik data seller conversion / affiliate conversion menggunakan API AMS Shopee.")
 
-    if not shop_names:
+    if not shop_name:
         st.warning("Belum ada toko.")
     else:
         selected_shop_conv = st.selectbox("Pilih Toko untuk Conversion", shop_names, key="shop_conv")
