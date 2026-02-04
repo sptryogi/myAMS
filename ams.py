@@ -201,14 +201,18 @@ with tab6:
 
                     params = {
                         "partner_id": PARTNER_ID,
-                        "timestamp": ts_conv,
-                        "access_token": ACTIVE_ACCESS_TOKEN,
-                        "shop_id": int(ACTIVE_SHOP_ID),
-                        "sign": sign_conv,
-                        "time_from": time_from, 
-                        "time_to": time_to,
+                        "timestamp": ts,
+                        "access_token": ACCESS_TOKEN,
+                        "shop_id": int(SHOP_ID),
+                        "sign": sign,
+                    
+                        # WAJIB
+                        "page_no": 1,
                         "page_size": 50,
-                        "cursor": cursor
+                    
+                        # WAJIB MINIMAL 1 PASANG TIME RANGE
+                        "place_order_time_start": time_from,
+                        "place_order_time_end": time_to,
                     }
 
                     try:
