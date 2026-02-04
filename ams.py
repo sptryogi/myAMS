@@ -205,8 +205,8 @@ with tab6:
                         "access_token": ACTIVE_ACCESS_TOKEN,
                         "shop_id": int(ACTIVE_SHOP_ID),
                         "sign": sign_conv,
-                        "purchase_time_from": time_from,
-                        "purchase_time_to": time_to,
+                        "validation_time_from": time_from,
+                        "validation_time_to": time_to,
                         "page_size": 50,
                         "cursor": cursor
                     }
