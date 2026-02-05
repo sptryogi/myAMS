@@ -365,12 +365,29 @@ with tab6:
                 if rows:
                     df = pd.DataFrame(rows)
                     
+                    numeric_columns = [
+                        'Item Price', 'Purchase Value', 'Refund Amount',
+                        'Item Brand Commission', 'Commission to Affiliate', 'Commission to MCN',
+                        'Pengeluaran(Rp)', 'Commission Rate to Affiliate', 'Commission Rate to MCN',
+                        'Qty'
+                    ]
+                    
+                    for col in numeric_columns:
+                        if col in df.columns:
+                            # Replace empty/None dengan 0, kemudian convert ke numeric
+                            df[col] = pd.to_numeric(df[col].replace('', 0).replace(None, 0), errors='coerce').fillna(0)
+                    
+                    # =====================================================
                     # Reorder columns untuk UX lebih baik
+                    # =====================================================
                     priority_cols = [
                         "Order SN", "Place Order Time", "Item Name", "Purchase Value", 
                         "Pengeluaran(Rp)", "Commission to Affiliate", "Commission to MCN",
                         "Item Brand Commission", "Affiliate Name", "Channel"
                     ]
+                    
+                    # Hanya ambil kolom yang ada di df
+                    priority_cols = [c for c in priority_cols if c in df.columns]
                     other_cols = [c for c in df.columns if c not in priority_cols]
                     df = df[priority_cols + other_cols]
                     
@@ -379,11 +396,14 @@ with tab6:
                     # Summary metrics
                     metric_col1, metric_col2, metric_col3 = st.columns(3)
                     with metric_col1:
-                        st.metric("Total Purchase Value", f"Rp {df['Purchase Value'].sum():,.0f}")
+                        total_purchase = df['Purchase Value'].sum()
+                        st.metric("Total Purchase Value", f"Rp {total_purchase:,.0f}")
                     with metric_col2:
-                        st.metric("Total Pengeluaran", f"Rp {df['Pengeluaran(Rp)'].sum():,.0f}")
+                        total_pengeluaran = df['Pengeluaran(Rp)'].sum()
+                        st.metric("Total Pengeluaran", f"Rp {total_pengeluaran:,.0f}")
                     with metric_col3:
-                        st.metric("Total Commission to Affiliate", f"Rp {df['Commission to Affiliate'].sum():,.0f}")
+                        total_commission = df['Commission to Affiliate'].sum()
+                        st.metric("Total Commission to Affiliate", f"Rp {total_commission:,.0f}")
                     
                     st.dataframe(df, use_container_width=True, height=600)
 
@@ -431,3 +451,4 @@ with tab6:
                     st.warning("Tidak ada data conversion ditemukan.")
                     # Debug info
                     st.info("Tips: Coba ubah rentang tanggal atau cek apakah ada order completed di periode tersebut.")
+                            
