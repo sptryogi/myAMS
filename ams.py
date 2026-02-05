@@ -186,269 +186,314 @@ with tab2:
 # TAB 6 — AMS CONVERSION (ALL COLUMNS)
 # ===============================
 with tab6:
-    st.header("🔁 Seller Conversion (AMS v2)")
-    st.info("Mengambil SEMUA data conversion termasuk kolom komisi dan pengeluaran.")
-
+    st.header("🔁 Seller Conversion Report (AMS v2)")
+    
     shops = get_all_shops()
     if not shops:
-        st.warning("Belum ada toko. Silakan authorize dan tukar token terlebih dahulu di Tab 1 & 2.")
-    else:
-        selected_shop = st.selectbox("Pilih Toko", shops)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input("Dari Tanggal", datetime.date.today() - datetime.timedelta(days=7))
-        with col2:
-            end_date = st.date_input("Sampai Tanggal", datetime.date.today())
-
+        st.warning("Belum ada toko. Silakan authorize dan tukar token di Tab 1 & 2.")
+        st.stop()
+    
+    selected_shop = st.selectbox("🏪 Pilih Toko", shops)
+    
+    # =====================================================
+    # DATE RANGE SELECTOR (FLEXIBLE)
+    # =====================================================
+    st.subheader("📅 Periode Laporan")
+    
+    date_col1, date_col2, date_col3 = st.columns([2, 2, 1])
+    
+    with date_col1:
+        # Preset cepat
+        preset = st.selectbox(
+            "Preset Cepat",
+            ["Custom Range", "Hari Ini", "Kemarin", "7 Hari Terakhir", "30 Hari Terakhir", "Bulan Ini", "Bulan Lalu"],
+            index=3
+        )
+    
+    # Default values
+    today = datetime.date.today()
+    
+    if preset == "Hari Ini":
+        start_date = today
+        end_date = today
+    elif preset == "Kemarin":
+        start_date = today - datetime.timedelta(days=1)
+        end_date = today - datetime.timedelta(days=1)
+    elif preset == "7 Hari Terakhir":
+        start_date = today - datetime.timedelta(days=7)
+        end_date = today
+    elif preset == "30 Hari Terakhir":
+        start_date = today - datetime.timedelta(days=30)
+        end_date = today
+    elif preset == "Bulan Ini":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif preset == "Bulan Lalu":
+        first_day_this_month = today.replace(day=1)
+        end_date = first_day_this_month - datetime.timedelta(days=1)
+        start_date = end_date.replace(day=1)
+    else:  # Custom Range
+        with date_col2:
+            start_date = st.date_input("Dari Tanggal", today - datetime.timedelta(days=7))
+        with date_col3:
+            end_date = st.date_input("Sampai Tanggal", today)
+    
+    # Display selected range
+    delta_days = (end_date - start_date).days + 1
+    st.info(f"📆 Periode: **{start_date.strftime('%d %b %Y')}** s/d **{end_date.strftime('%d %b %Y')}** ({delta_days} hari)")
+    
+    # Validate range (Shopee biasanya limit 30-90 hari)
+    if delta_days > 90:
+        st.warning("⚠️ Rentang waktu > 90 hari mungkin akan error dari API Shopee. Pertimbangkan untuk memecah periode.")
+    
+    # =====================================================
+    # FETCH DATA
+    # =====================================================
+    if st.button("🚀 Tarik Data Conversion", type="primary"):
+        token = get_shop_token(selected_shop)
+        if not token:
+            st.error("❌ Token tidak ditemukan. Silakan authorize ulang.")
+            st.stop()
+        
+        shop_id = token["shop_id"]
+        access_token = token["access_token"]
+        
+        # Helper: Convert date to timestamp
         def to_ts(d, end=False):
-            if end:
-                dt = datetime.datetime.combine(d, datetime.time(23, 59, 59))
-            else:
-                dt = datetime.datetime.combine(d, datetime.time(0, 0, 0))
+            dt = datetime.datetime.combine(d, datetime.time(23, 59, 59) if end else datetime.time(0, 0, 0))
             return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
-
-        if st.button("📊 Tarik Seller Conversion"):
-            token = get_shop_token(selected_shop)
-            if not token:
-                st.error("Token tidak ditemukan.")
-            else:
-                shop_id = token["shop_id"]
-                access_token = token["access_token"]
-
-                start_ts = to_ts(start_date)
-                end_ts = to_ts(end_date, end=True)
-
-                path = "/api/v2/ams/get_conversion_report"
-                page_no = 1
-                page_size = 50
-                has_more = True
-
-                all_orders = []  # Simpan raw data untuk debug
-                rows = []
-                progress = st.progress(0)
-                status_text = st.empty()
-
-                while has_more:
-                    ts = int(time.time())
-                    sign = generate_sign_full(path, ts, access_token, shop_id)
-
-                    params = {
-                        "partner_id": PARTNER_ID,
-                        "timestamp": ts,
-                        "access_token": access_token,
-                        "shop_id": int(shop_id),
-                        "sign": sign,
-                        "page_no": page_no,
-                        "page_size": page_size,
-                        "place_order_time_start": start_ts,
-                        "place_order_time_end": end_ts,
-                        "order_status": "Completed"
-                    }
-
-                    try:
-                        resp = requests.get(BASE_URL + path, params=params, timeout=30).json()
-                    except Exception as e:
-                        st.error(f"Request error: {str(e)}")
-                        break
-
-                    if resp.get("error"):
-                        st.error(f"API Error: {resp.get('message', 'Unknown error')}")
-                        st.json(resp)
-                        break
-
-                    data = resp.get("response", {})
-                    orders = data.get("list", [])
+        
+        start_ts = to_ts(start_date)
+        end_ts = to_ts(end_date, end=True)
+        
+        # Progress tracking
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        path = "/api/v2/ams/get_conversion_report"
+        page_no = 1
+        page_size = 100  # Maximize page size
+        all_orders = []
+        
+        with st.spinner("Mengambil data dari Shopee API..."):
+            while True:
+                ts = int(time.time())
+                sign = generate_sign_full(path, ts, access_token, shop_id)
+                
+                params = {
+                    "partner_id": PARTNER_ID,
+                    "timestamp": ts,
+                    "access_token": access_token,
+                    "shop_id": int(shop_id),
+                    "sign": sign,
+                    "page_no": page_no,
+                    "page_size": page_size,
+                    "place_order_time_start": start_ts,
+                    "place_order_time_end": end_ts,
+                    "order_status": "Completed"
+                }
+                
+                try:
+                    resp = requests.get(BASE_URL + path, params=params, timeout=30).json()
+                except Exception as e:
+                    st.error(f"🌐 Network Error: {str(e)}")
+                    break
+                
+                if resp.get("error"):
+                    st.error(f"❌ API Error: {resp.get('message', 'Unknown error')}")
+                    st.json(resp)
+                    break
+                
+                data = resp.get("response", {})
+                orders = data.get("list", [])
+                
+                if not orders:
+                    break
+                
+                all_orders.extend(orders)
+                
+                # Update progress
+                total_estimate = data.get("total_count", page_no * page_size)
+                progress = min(page_no * page_size / max(total_estimate, 1), 0.95)
+                progress_bar.progress(progress)
+                status_text.text(f"📄 Page {page_no} | Orders: {len(all_orders)} | Items: {sum(len(o.get('items', [])) for o in all_orders)}")
+                
+                if not data.get("has_more", False):
+                    break
+                
+                page_no += 1
+                time.sleep(0.3)  # Rate limiting
+        
+        progress_bar.empty()
+        status_text.empty()
+        
+        # =====================================================
+        # PROCESS DATA
+        # =====================================================
+        if not all_orders:
+            st.warning("📭 Tidak ada data conversion untuk periode ini.")
+            st.info("💡 Tips: Coba perpanjang rentang tanggal atau cek apakah ada order completed.")
+            st.stop()
+        
+        # Flatten data
+        rows = []
+        for order in all_orders:
+            order_base = {
+                "order_sn": order.get("order_sn"),
+                "order_status": order.get("order_status"),
+                "verified_status": order.get("verified_status"),
+                "place_order_time": order.get("place_order_time"),
+                "order_completed_time": order.get("order_completed_time"),
+                "conversion_completed_time": order.get("conversion_completed_time"),
+                "affiliate_id": order.get("affiliate_id"),
+                "affiliate_name": order.get("affiliate_name"),
+                "affiliate_username": order.get("affiliate_username"),
+                "linked_mcn": order.get("linked_mcn"),
+                "channel": order.get("channel"),
+                "order_type": order.get("order_type"),
+                "buyer_status": order.get("buyer_status"),
+            }
+            
+            for item in order.get("items", []):
+                row = order_base.copy()
+                row.update({
+                    # Item details
+                    "item_id": item.get("item_id"),
+                    "item_name": item.get("item_name"),
+                    "model_id": item.get("model_id"),
+                    "model_name": item.get("model_name"),
+                    "l1_category_id": item.get("l1_category_id"),
+                    "l2_category_id": item.get("l2_category_id"),
+                    "l3_category_id": item.get("l3_category_id"),
+                    "promotion_id": item.get("promotion_id"),
                     
-                    if not orders:
-                        break
-
-                    all_orders.extend(orders)  # Simpan untuk debug
-
-                    for order in orders:
-                        # Ambil semua field dari order level
-                        order_sn = order.get("order_sn")
-                        order_status = order.get("order_status")
-                        verified_status = order.get("verified_status")
-                        place_order_time = order.get("place_order_time")
-                        order_completed_time = order.get("order_completed_time")
-                        conversion_completed_time = order.get("conversion_completed_time")
-                        
-                        affiliate_id = order.get("affiliate_id")
-                        affiliate_name = order.get("affiliate_name")
-                        affiliate_username = order.get("affiliate_username")
-                        linked_mcn = order.get("linked_mcn")
-                        channel = order.get("channel")
-                        order_type = order.get("order_type")
-                        buyer_status = order.get("buyer_status")
-                        
-                        # Total level order (untuk referensi)
-                        total_brand_commission = order.get("total_brand_commission", 0)
-                        total_brand_commission_to_affiliate = order.get("total_brand_commission_to_affiliate", 0)
-                        total_brand_commission_to_mcn = order.get("total_brand_commission_to_mcn", 0)
-
-                        for item in order.get("items", []):
-                            # Kalkulasi Pengeluaran (Commission yang harus dibayar seller)
-                            # Ini adalah komisi total yang keluar dari seller
-                            item_brand_commission = item.get("item_brand_commission", 0) or 0
-                            commission_to_affiliate = item.get("item_brand_commission_to_affiliate", 0) or 0
-                            commission_to_mcn = item.get("item_brand_commission_to_mcn", 0) or 0
-                            
-                            # Pengeluaran = Total komisi yang dibayarkan (biasanya ke affiliate + mcn)
-                            # Atau bisa juga menggunakan item_brand_commission (total potongan)
-                            pengeluaran_rp = item_brand_commission  # atau commission_to_affiliate + commission_to_mcn
-
-                            row_data = {
-                                # Order Info
-                                "Order SN": order_sn,
-                                "Order Status": order_status,
-                                "Verified Status": verified_status,
-                                "Place Order Time": place_order_time,
-                                "Order Completed Time": order_completed_time,
-                                "Conversion Completed Time": conversion_completed_time,
-                                
-                                # Affiliate Info
-                                "Affiliate ID": affiliate_id,
-                                "Affiliate Name": affiliate_name,
-                                "Affiliate Username": affiliate_username,
-                                "Linked MCN": linked_mcn,
-                                "Channel": channel,
-                                "Order Type": order_type,
-                                "Buyer Status": buyer_status,
-                                
-                                # Item Info
-                                "Item ID": item.get("item_id"),
-                                "Item Name": item.get("item_name"),
-                                "Model ID": item.get("model_id"),
-                                "Model Name": item.get("model_name"),  # Tambahan
-                                "L1 Category ID": item.get("l1_category_id"),
-                                "L2 Category ID": item.get("l2_category_id"),
-                                "L3 Category ID": item.get("l3_category_id"),
-                                "Promotion ID": item.get("promotion_id"),
-                                
-                                # Pricing & Quantity
-                                "Item Price": item.get("price"),
-                                "Qty": item.get("qty"),
-                                "Purchase Value": item.get("purchase_value"),
-                                "Refund Amount": item.get("refund_amount"),
-                                
-                                # Commission Details (SEMUA KOLOM KOMISI)
-                                "Item Brand Commission": item_brand_commission,
-                                "Commission Rate to Affiliate": item.get("item_brand_commission_rate_to_affiliate"),
-                                "Commission to Affiliate": commission_to_affiliate,
-                                "Commission Rate to MCN": item.get("item_brand_commission_rate_to_mcn"),
-                                "Commission to MCN": commission_to_mcn,
-                                
-                                # PENGELUARAN (Rp) - Kolom yang Anda minta
-                                "Pengeluaran(Rp)": pengeluaran_rp,
-                                
-                                # Campaign Info
-                                "Seller Campaign Type": item.get("seller_campaign_type"),
-                                "Attr Campaign ID": item.get("attr_campaign_id"),
-                                "Campaign Partner": item.get("campaign_partner"),
-                                
-                                # Tambahan field lain yang mungkin ada
-                                "Shop ID": shop_id,
-                                "Page": page_no
-                            }
-                            rows.append(row_data)
-
-                    has_more = data.get("has_more", False)
-                    total_count = data.get("total_count", 0)
+                    # Quantity & Pricing
+                    "qty": item.get("qty", 0),
+                    "price": item.get("price", 0),
+                    "purchase_value": item.get("purchase_value", 0),
+                    "refund_amount": item.get("refund_amount", 0),
                     
-                    progress.progress(min(page_no * page_size / max(total_count, 1), 1.0))
-                    status_text.info(f"Page {page_no} | Rows: {len(rows)} | Has More: {has_more}")
+                    # Commissions
+                    "item_brand_commission": item.get("item_brand_commission", 0),
+                    "commission_rate_to_affiliate": item.get("item_brand_commission_rate_to_affiliate", 0),
+                    "commission_to_affiliate": item.get("item_brand_commission_to_affiliate", 0),
+                    "commission_rate_to_mcn": item.get("item_brand_commission_rate_to_mcn", 0),
+                    "commission_to_mcn": item.get("item_brand_commission_to_mcn", 0),
                     
-                    page_no += 1
-                    time.sleep(0.5)  # Rate limiting
-
-                if rows:
-                    df = pd.DataFrame(rows)
-                    
-                    numeric_columns = [
-                        'Item Price', 'Purchase Value', 'Refund Amount',
-                        'Item Brand Commission', 'Commission to Affiliate', 'Commission to MCN',
-                        'Pengeluaran(Rp)', 'Commission Rate to Affiliate', 'Commission Rate to MCN',
-                        'Qty'
-                    ]
-                    
-                    for col in numeric_columns:
-                        if col in df.columns:
-                            # Replace empty/None dengan 0, kemudian convert ke numeric
-                            df[col] = pd.to_numeric(df[col].replace('', 0).replace(None, 0), errors='coerce').fillna(0)
-                    
-                    # =====================================================
-                    # Reorder columns untuk UX lebih baik
-                    # =====================================================
-                    priority_cols = [
-                        "Order SN", "Place Order Time", "Item Name", "Purchase Value", 
-                        "Pengeluaran(Rp)", "Commission to Affiliate", "Commission to MCN",
-                        "Item Brand Commission", "Affiliate Name", "Channel"
-                    ]
-                    
-                    # Hanya ambil kolom yang ada di df
-                    priority_cols = [c for c in priority_cols if c in df.columns]
-                    other_cols = [c for c in df.columns if c not in priority_cols]
-                    df = df[priority_cols + other_cols]
-                    
-                    st.success(f"✅ Berhasil mengambil {len(df)} baris data dari {len(all_orders)} orders.")
-                    
-                    # Summary metrics
-                    metric_col1, metric_col2, metric_col3 = st.columns(3)
-                    with metric_col1:
-                        total_purchase = df['Purchase Value'].sum()
-                        st.metric("Total Purchase Value", f"Rp {total_purchase:,.0f}")
-                    with metric_col2:
-                        total_pengeluaran = df['Pengeluaran(Rp)'].sum()
-                        st.metric("Total Pengeluaran", f"Rp {total_pengeluaran:,.0f}")
-                    with metric_col3:
-                        total_commission = df['Commission to Affiliate'].sum()
-                        st.metric("Total Commission to Affiliate", f"Rp {total_commission:,.0f}")
-                    
-                    st.dataframe(df, use_container_width=True, height=600)
-
-                    # Export Excel
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                        df.to_excel(writer, index=False, sheet_name="AMS Conversion")
-                        
-                        # Auto-adjust column widths
-                        worksheet = writer.sheets["AMS Conversion"]
-                        for column in worksheet.columns:
-                            max_length = 0
-                            column_letter = column[0].column_letter
-                            for cell in column:
-                                try:
-                                    if len(str(cell.value)) > max_length:
-                                        max_length = len(str(cell.value))
-                                except:
-                                    pass
-                            adjusted_width = min(max_length + 2, 50)
-                            worksheet.column_dimensions[column_letter].width = adjusted_width
-
-                    excel_data = output.getvalue()
-                    
-                    col_dl1, col_dl2 = st.columns(2)
-                    with col_dl1:
-                        st.download_button(
-                            "📥 Download Excel",
-                            data=excel_data,
-                            file_name=f"AMS_Conversion_{selected_shop}_{start_date}_{end_date}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    with col_dl2:
-                        # Simpan ke DB juga
-                        if st.button("💾 Simpan ke Database"):
-                            save_report_to_db(selected_shop, f"{start_date} to {end_date}", excel_data)
-                            st.success("Report tersimpan di database!")
-                    
-                    # Debug: Tampilkan sample raw response
-                    with st.expander("🔍 Debug: Sample Raw Data (Order 1)"):
-                        if all_orders:
-                            st.json(all_orders[0])
-                            
-                else:
-                    st.warning("Tidak ada data conversion ditemukan.")
-                    # Debug info
-                    st.info("Tips: Coba ubah rentang tanggal atau cek apakah ada order completed di periode tersebut.")
+                    # Campaign
+                    "seller_campaign_type": item.get("seller_campaign_type"),
+                    "attr_campaign_id": item.get("attr_campaign_id"),
+                    "campaign_partner": item.get("campaign_partner"),
+                })
+                rows.append(row)
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows)
+        
+        # =====================================================
+        # FIX: SAFE NUMERIC CONVERSION
+        # =====================================================
+        numeric_cols = {
+            'qty': 0, 'price': 0.0, 'purchase_value': 0.0, 'refund_amount': 0.0,
+            'item_brand_commission': 0.0, 'commission_rate_to_affiliate': 0.0,
+            'commission_to_affiliate': 0.0, 'commission_rate_to_mcn': 0.0,
+            'commission_to_mcn': 0.0
+        }
+        
+        for col, default in numeric_cols.items():
+            if col in df.columns:
+                # Method aman: coerce errors ke NaN kemudian fillna
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(default)
+        
+        # Add calculated column: Pengeluaran(Rp)
+        df['pengeluaran_rp'] = df['item_brand_commission']  # Total commission deducted
+        
+        # =====================================================
+        # DISPLAY RESULTS
+        # =====================================================
+        st.success(f"✅ Berhasil! {len(df)} item dari {len(all_orders)} orders")
+        
+        # Metrics Summary
+        metric_cols = st.columns(4)
+        metrics = [
+            ("💰 Total Purchase", df['purchase_value'].sum(), "Rp {:,.0f}"),
+            ("💸 Total Pengeluaran", df['pengeluaran_rp'].sum(), "Rp {:,.0f}"),
+            ("👥 Ke Affiliate", df['commission_to_affiliate'].sum(), "Rp {:,.0f}"),
+            ("🏢 Ke MCN", df['commission_to_mcn'].sum(), "Rp {:,.0f}")
+        ]
+        
+        for col, (label, value, fmt) in zip(metric_cols, metrics):
+            with col:
+                st.metric(label, fmt.format(value))
+        
+        # Reorder columns untuk display
+        display_cols = [
+            'order_sn', 'place_order_time', 'item_name', 'purchase_value',
+            'pengeluaran_rp', 'commission_to_affiliate', 'commission_to_mcn',
+            'affiliate_name', 'channel', 'qty', 'price'
+        ]
+        # Add remaining columns
+        display_cols = [c for c in display_cols if c in df.columns] + [c for c in df.columns if c not in display_cols]
+        df_display = df[display_cols]
+        
+        # Rename columns untuk UI lebih baik
+        column_mapping = {
+            'order_sn': 'Order SN',
+            'place_order_time': 'Waktu Order',
+            'item_name': 'Nama Produk',
+            'purchase_value': 'Nilai Beli (Rp)',
+            'pengeluaran_rp': 'Pengeluaran (Rp)',
+            'commission_to_affiliate': 'Komisi Affiliate (Rp)',
+            'commission_to_mcn': 'Komisi MCN (Rp)',
+            'affiliate_name': 'Nama Affiliate',
+            'channel': 'Channel',
+            'qty': 'Qty',
+            'price': 'Harga Satuan'
+        }
+        df_display = df_display.rename(columns=column_mapping)
+        
+        st.dataframe(df_display, use_container_width=True, height=500)
+        
+        # =====================================================
+        # EXPORT EXCEL
+        # =====================================================
+        st.divider()
+        st.subheader("📥 Export Data")
+        
+        # Prepare export data (all columns, original names)
+        export_df = df.copy()
+        
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            export_df.to_excel(writer, index=False, sheet_name='AMS Conversion')
+            
+            # Auto-adjust
+            worksheet = writer.sheets['AMS Conversion']
+            for column in worksheet.columns:
+                max_length = max(len(str(cell.value) or "") for cell in column) + 2
+                worksheet.column_dimensions[column[0].column_letter].width = min(max_length, 50)
+        
+        excel_data = excel_buffer.getvalue()
+        
+        exp_col1, exp_col2, exp_col3 = st.columns([1, 1, 2])
+        
+        with exp_col1:
+            st.download_button(
+                label="📥 Download Excel",
+                data=excel_data,
+                file_name=f"AMS_{selected_shop}_{start_date}_{end_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        
+        with exp_col2:
+            if st.button("💾 Simpan ke Database"):
+                try:
+                    save_report_to_db(selected_shop, f"{start_date} to {end_date}", excel_data)
+                    st.success("✅ Tersimpan!")
+                except Exception as e:
+                    st.error(f"Gagal simpan: {e}")
+        
+        with exp_col3:
+            with st.expander("🔍 Lihat Sample Data Raw (JSON)"):
+                st.json(all_orders[0] if all_orders else {})
                             
