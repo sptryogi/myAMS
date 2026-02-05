@@ -196,7 +196,7 @@ with tab6:
     selected_shop = st.selectbox("🏪 Pilih Toko", shops)
     
     # =====================================================
-    # DATE RANGE SELECTOR (FLEXIBLE)
+    # DATE RANGE SELECTOR (FLEXIBLE + TIMEZONE INDONESIA)
     # =====================================================
     st.subheader("📅 Periode Laporan")
     
@@ -210,8 +210,11 @@ with tab6:
             index=3
         )
     
-    # Default values
-    today = datetime.date.today()
+    # Default values - Gunakan timezone Indonesia (WIB/UTC+7)
+    import pytz
+    indonesia_tz = pytz.timezone('Asia/Jakarta')
+    now_id = datetime.datetime.now(indonesia_tz)
+    today = now_id.date()
     
     if preset == "Hari Ini":
         start_date = today
@@ -238,9 +241,18 @@ with tab6:
         with date_col3:
             end_date = st.date_input("Sampai Tanggal", today)
     
+    # VALIDASI: End date tidak boleh lebih dari hari ini
+    if end_date > today:
+        st.warning(f"⚠️ Tanggal akhir ({end_date}) melebihi hari ini ({today}). Otomatis diset ke hari ini.")
+        end_date = today
+    
+    if start_date > today:
+        st.warning(f"⚠️ Tanggal mulai ({start_date}) melebihi hari ini ({today}). Otomatis diset ke hari ini.")
+        start_date = today
+    
     # Display selected range
     delta_days = (end_date - start_date).days + 1
-    st.info(f"📆 Periode: **{start_date.strftime('%d %b %Y')}** s/d **{end_date.strftime('%d %b %Y')}** ({delta_days} hari)")
+    st.info(f"📆 Periode: **{start_date.strftime('%d %b %Y')}** s/d **{end_date.strftime('%d %b %Y')}** ({delta_days} hari) | 🕐 Waktu Indonesia (WIB)")
     
     # Validate range (Shopee biasanya limit 30-90 hari)
     if delta_days > 90:
@@ -258,13 +270,24 @@ with tab6:
         shop_id = token["shop_id"]
         access_token = token["access_token"]
         
-        # Helper: Convert date to timestamp
+        # Helper: Convert date to timestamp (UTC untuk API Shopee)
         def to_ts(d, end=False):
-            dt = datetime.datetime.combine(d, datetime.time(23, 59, 59) if end else datetime.time(0, 0, 0))
-            return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
+            # Buat datetime dengan timezone Indonesia
+            if end:
+                dt = datetime.datetime.combine(d, datetime.time(23, 59, 59))
+            else:
+                dt = datetime.datetime.combine(d, datetime.time(0, 0, 0))
+            
+            # Set timezone Indonesia, kemudian convert ke UTC
+            dt_id = indonesia_tz.localize(dt)
+            dt_utc = dt_id.astimezone(pytz.UTC)
+            return int(dt_utc.timestamp())
         
         start_ts = to_ts(start_date)
         end_ts = to_ts(end_date, end=True)
+        
+        # Debug info
+        st.caption(f"🕐 UTC Start: {datetime.datetime.fromtimestamp(start_ts, pytz.UTC)} | UTC End: {datetime.datetime.fromtimestamp(end_ts, pytz.UTC)}")
         
         # Progress tracking
         progress_bar = st.progress(0)
@@ -272,7 +295,7 @@ with tab6:
         
         path = "/api/v2/ams/get_conversion_report"
         page_no = 1
-        page_size = 100  # Maximize page size
+        page_size = 100
         all_orders = []
         
         with st.spinner("Mengambil data dari Shopee API..."):
@@ -289,8 +312,8 @@ with tab6:
                     "page_no": page_no,
                     "page_size": page_size,
                     "place_order_time_start": start_ts,
-                    "place_order_time_end": end_ts
-                    # "order_status": "Completed"
+                    "place_order_time_end": end_ts,
+                    "order_status": "Completed"
                 }
                 
                 try:
@@ -300,7 +323,10 @@ with tab6:
                     break
                 
                 if resp.get("error"):
-                    st.error(f"❌ API Error: {resp.get('message', 'Unknown error')}")
+                    error_msg = resp.get('message', 'Unknown error')
+                    st.error(f"❌ API Error: {error_msg}")
+                    if "too late" in error_msg.lower() or "has not been updated" in error_msg.lower():
+                        st.info("💡 Solusi: Data untuk tanggal tersebut belum tersedia. Coba gunakan preset 'Kemarin' atau periode yang sudah lewat.")
                     st.json(resp)
                     break
                 
@@ -322,7 +348,7 @@ with tab6:
                     break
                 
                 page_no += 1
-                time.sleep(0.3)  # Rate limiting
+                time.sleep(0.3)
         
         progress_bar.empty()
         status_text.empty()
@@ -335,78 +361,122 @@ with tab6:
             st.info("💡 Tips: Coba perpanjang rentang tanggal atau cek apakah ada order completed.")
             st.stop()
         
-        # Flatten data
+        # Flatten data dengan mapping kolom lengkap
         rows = []
         for order in all_orders:
-            order_base = {
-                "order_sn": order.get("order_sn"),
-                "order_status": order.get("order_status"),
-                "verified_status": order.get("verified_status"),
-                "place_order_time": order.get("place_order_time"),
-                "order_completed_time": order.get("order_completed_time"),
-                "conversion_completed_time": order.get("conversion_completed_time"),
-                "affiliate_id": order.get("affiliate_id"),
-                "affiliate_name": order.get("affiliate_name"),
-                "affiliate_username": order.get("affiliate_username"),
-                "linked_mcn": order.get("linked_mcn"),
-                "channel": order.get("channel"),
-                "order_type": order.get("order_type"),
-                "buyer_status": order.get("buyer_status"),
-            }
+            # Ambil data commission di level order (untuk kalkulasi)
+            order_commission = order.get("total_brand_commission", 0) or 0
+            order_commission_aff = order.get("total_brand_commission_to_affiliate", 0) or 0
+            order_commission_mcn = order.get("total_brand_commission_to_mcn", 0) or 0
             
-            for item in order.get("items", []):
-                row = order_base.copy()
-                row.update({
-                    # Item details
-                    "item_id": item.get("item_id"),
-                    "item_name": item.get("item_name"),
-                    "model_id": item.get("model_id"),
-                    "model_name": item.get("model_name"),
-                    "l1_category_id": item.get("l1_category_id"),
-                    "l2_category_id": item.get("l2_category_id"),
-                    "l3_category_id": item.get("l3_category_id"),
-                    "promotion_id": item.get("promotion_id"),
+            items = order.get("items", [])
+            item_count = len(items) if items else 1  # Hindari division by zero
+            
+            for item in items:
+                # Kalkulasi komisi per produk (rata-rata jika multiple items)
+                item_commission = item.get("item_brand_commission", 0) or 0
+                item_commission_aff = item.get("item_brand_commission_to_affiliate", 0) or 0
+                item_commission_mcn = item.get("item_brand_commission_to_mcn", 0) or 0
+                
+                # Format waktu ke WIB
+                place_time = order.get("place_order_time", "")
+                completed_time = order.get("order_completed_time", "")
+                conv_time = order.get("conversion_completed_time", "")
+                
+                row = {
+                    # === IDENTITAS PESANAN ===
+                    "Kode Pesanan": order.get("order_sn"),
+                    "Status Pesanan": order.get("order_status"),
+                    "Status Terverifikasi": order.get("verified_status"),
+                    "Waktu Pesanan": place_time,
+                    "Waktu Pesanan Selesai": completed_time,
+                    "Waktu Pesanan Terverifikasi": conv_time,
                     
-                    # Quantity & Pricing
-                    "qty": item.get("qty", 0),
-                    "price": item.get("price", 0),
-                    "purchase_value": item.get("purchase_value", 0),
-                    "refund_amount": item.get("refund_amount", 0),
+                    # === DETAIL PRODUK ===
+                    "Kode Produk": item.get("item_id"),
+                    "Nama Produk": item.get("item_name"),
+                    "ID Model": item.get("model_id"),
+                    "L1 Kategori Global": item.get("l1_category_id"),
+                    "L2 Kategori Global": item.get("l2_category_id"),
+                    "L3 Kategori Global": item.get("l3_category_id"),
                     
-                    # Commissions
-                    "item_brand_commission": item.get("item_brand_commission", 0),
-                    "commission_rate_to_affiliate": item.get("item_brand_commission_rate_to_affiliate", 0),
-                    "commission_to_affiliate": item.get("item_brand_commission_to_affiliate", 0),
-                    "commission_rate_to_mcn": item.get("item_brand_commission_rate_to_mcn", 0),
-                    "commission_to_mcn": item.get("item_brand_commission_to_mcn", 0),
+                    # === PROMO & HARGA ===
+                    "Kode Promo": item.get("promotion_id"),
+                    "Harga(Rp)": item.get("price", 0),
+                    "Jumlah": item.get("qty", 0),
                     
-                    # Campaign
-                    "seller_campaign_type": item.get("seller_campaign_type"),
-                    "attr_campaign_id": item.get("attr_campaign_id"),
-                    "campaign_partner": item.get("campaign_partner"),
-                })
+                    # === AFFILIATE INFO ===
+                    "Nama Affiliate": order.get("affiliate_name"),
+                    "Username Affiliate": order.get("affiliate_username"),
+                    "MCN Terhubung": order.get("linked_mcn"),
+                    "ID Komisi Pesanan": order.get("affiliate_id"),  # atau commission_id jika ada
+                    "Partner Promo": item.get("campaign_partner"),
+                    "Jenis Promo": item.get("seller_campaign_type"),
+                    
+                    # === FINANSIAL ===
+                    "Nilai Pembelian(Rp)": item.get("purchase_value", 0),
+                    "Jumlah Pengembalian(Rp)": item.get("refund_amount", 0),
+                    "Tipe Pesanan": order.get("order_type"),
+                    
+                    # === KOMISI PER PRODUK (ITEM LEVEL) ===
+                    "Estimasi Komisi per Produk(Rp)": item_commission,
+                    "Estimasi Komisi Affiliate per Produk(Rp)": item_commission_aff,
+                    "Persentase Komisi Affiliate per Produk": item.get("item_brand_commission_rate_to_affiliate", 0),
+                    "Estimasi Komisi MCN per Produk(Rp)": item_commission_mcn,
+                    "Persentase Komisi MCN per Produk": item.get("item_brand_commission_rate_to_mcn", 0),
+                    
+                    # === KOMISI PER PESANAN (ORDER LEVEL) ===
+                    "Estimasi Komisi per Pesanan(Rp)": order_commission,
+                    "Estimasi Komisi Affiliate per Pesanan(Rp)": order_commission_aff,
+                    "Estimasi Komisi MCN per Pesanan(Rp)": order_commission_mcn,
+                    
+                    # === LAINNYA ===
+                    "Catatan Produk": "",  # Tidak tersedia di API, dikosongkan
+                    "Platform": order.get("channel"),
+                    "Pengeluaran(Rp)": item_commission,  # Sama dengan komisi per produk
+                    "Status Pemotongan": order.get("verified_status"),  # Menggunakan verified_status
+                    "Metode Pemotongan": "Otomatis",  # Default untuk AMS
+                    "Waktu Pemotongan": conv_time if conv_time else completed_time,  # Menggunakan conversion time
+                }
                 rows.append(row)
         
-        # Create DataFrame
+        # Create DataFrame dengan kolom terurut sesuai permintaan
+        desired_columns = [
+            "Kode Pesanan", "Status Pesanan", "Status Terverifikasi", "Waktu Pesanan", 
+            "Waktu Pesanan Selesai", "Waktu Pesanan Terverifikasi", "Kode Produk", 
+            "Nama Produk", "ID Model", "L1 Kategori Global", "L2 Kategori Global", 
+            "L3 Kategori Global", "Kode Promo", "Harga(Rp)", "Jumlah", "Nama Affiliate",
+            "Username Affiliate", "MCN Terhubung", "ID Komisi Pesanan", "Partner Promo",
+            "Jenis Promo", "Nilai Pembelian(Rp)", "Jumlah Pengembalian(Rp)", "Tipe Pesanan",
+            "Estimasi Komisi per Produk(Rp)", "Estimasi Komisi Affiliate per Produk(Rp)",
+            "Persentase Komisi Affiliate per Produk", "Estimasi Komisi MCN per Produk(Rp)",
+            "Persentase Komisi MCN per Produk", "Estimasi Komisi per Pesanan(Rp)",
+            "Estimasi Komisi Affiliate per Pesanan(Rp)", "Estimasi Komisi MCN per Pesanan(Rp)",
+            "Catatan Produk", "Platform", "Pengeluaran(Rp)", "Status Pemotongan",
+            "Metode Pemotongan", "Waktu Pemotongan"
+        ]
+        
         df = pd.DataFrame(rows)
         
         # =====================================================
-        # FIX: SAFE NUMERIC CONVERSION
+        # SAFE NUMERIC CONVERSION
         # =====================================================
-        numeric_cols = {
-            'qty': 0, 'price': 0.0, 'purchase_value': 0.0, 'refund_amount': 0.0,
-            'item_brand_commission': 0.0, 'commission_rate_to_affiliate': 0.0,
-            'commission_to_affiliate': 0.0, 'commission_rate_to_mcn': 0.0,
-            'commission_to_mcn': 0.0
-        }
+        numeric_cols = [
+            'Harga(Rp)', 'Jumlah', 'Nilai Pembelian(Rp)', 'Jumlah Pengembalian(Rp)',
+            'Estimasi Komisi per Produk(Rp)', 'Estimasi Komisi Affiliate per Produk(Rp)',
+            'Persentase Komisi Affiliate per Produk', 'Estimasi Komisi MCN per Produk(Rp)',
+            'Persentase Komisi MCN per Produk', 'Estimasi Komisi per Pesanan(Rp)',
+            'Estimasi Komisi Affiliate per Pesanan(Rp)', 'Estimasi Komisi MCN per Pesanan(Rp)',
+            'Pengeluaran(Rp)'
+        ]
         
-        for col, default in numeric_cols.items():
+        for col in numeric_cols:
             if col in df.columns:
-                # Method aman: coerce errors ke NaN kemudian fillna
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(default)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # Add calculated column: Pengeluaran(Rp)
-        df['pengeluaran_rp'] = df['item_brand_commission']  # Total commission deducted
+        # Reorder columns sesuai permintaan
+        existing_cols = [c for c in desired_columns if c in df.columns]
+        df = df[existing_cols]
         
         # =====================================================
         # DISPLAY RESULTS
@@ -416,43 +486,17 @@ with tab6:
         # Metrics Summary
         metric_cols = st.columns(4)
         metrics = [
-            ("💰 Total Purchase", df['purchase_value'].sum(), "Rp {:,.0f}"),
-            ("💸 Total Pengeluaran", df['pengeluaran_rp'].sum(), "Rp {:,.0f}"),
-            ("👥 Ke Affiliate", df['commission_to_affiliate'].sum(), "Rp {:,.0f}"),
-            ("🏢 Ke MCN", df['commission_to_mcn'].sum(), "Rp {:,.0f}")
+            ("💰 Total Purchase", df['Nilai Pembelian(Rp)'].sum(), "Rp {:,.0f}"),
+            ("💸 Total Pengeluaran", df['Pengeluaran(Rp)'].sum(), "Rp {:,.0f}"),
+            ("👥 Ke Affiliate", df['Estimasi Komisi Affiliate per Produk(Rp)'].sum(), "Rp {:,.0f}"),
+            ("🏢 Ke MCN", df['Estimasi Komisi MCN per Produk(Rp)'].sum(), "Rp {:,.0f}")
         ]
         
         for col, (label, value, fmt) in zip(metric_cols, metrics):
             with col:
                 st.metric(label, fmt.format(value))
         
-        # Reorder columns untuk display
-        display_cols = [
-            'order_sn', 'place_order_time', 'item_name', 'purchase_value',
-            'pengeluaran_rp', 'commission_to_affiliate', 'commission_to_mcn',
-            'affiliate_name', 'channel', 'qty', 'price'
-        ]
-        # Add remaining columns
-        display_cols = [c for c in display_cols if c in df.columns] + [c for c in df.columns if c not in display_cols]
-        df_display = df[display_cols]
-        
-        # Rename columns untuk UI lebih baik
-        column_mapping = {
-            'order_sn': 'Kode Pesanan',
-            'place_order_time': 'Waktu Order',
-            'item_name': 'Nama Produk',
-            'purchase_value': 'Nilai Beli (Rp)',
-            'pengeluaran_rp': 'Pengeluaran (Rp)',
-            'commission_to_affiliate': 'Komisi Affiliate (Rp)',
-            'commission_to_mcn': 'Komisi MCN (Rp)',
-            'affiliate_name': 'Nama Affiliate',
-            'channel': 'Channel',
-            'qty': 'Qty',
-            'price': 'Harga Satuan'
-        }
-        df_display = df_display.rename(columns=column_mapping)
-        
-        st.dataframe(df_display, use_container_width=True, height=500)
+        st.dataframe(df, use_container_width=True, height=500)
         
         # =====================================================
         # EXPORT EXCEL
@@ -460,12 +504,9 @@ with tab6:
         st.divider()
         st.subheader("📥 Export Data")
         
-        # Prepare export data (all columns, original names)
-        export_df = df.copy()
-        
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name='AMS Conversion')
+            df.to_excel(writer, index=False, sheet_name='AMS Conversion')
             
             # Auto-adjust
             worksheet = writer.sheets['AMS Conversion']
@@ -496,4 +537,3 @@ with tab6:
         with exp_col3:
             with st.expander("🔍 Lihat Sample Data Raw (JSON)"):
                 st.json(all_orders[0] if all_orders else {})
-                            
