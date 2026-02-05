@@ -34,11 +34,24 @@ REDIRECT_URL = st.secrets.get("REDIRECT_URL", "")
 BASE_URL = "https://partner.shopeemobile.com"
 
 # ===============================
-# OAUTH PARAMS
+# OAUTH PARAMS (AUTO-FILL SUPPORT)
 # ===============================
-query_params = st.experimental_get_query_params()
-oauth_code = query_params.get("code", [None])[0]
-oauth_shop_id = query_params.get("shop_id", [None])[0]
+# Gunakan st.query_params yang baru, bukan experimental
+query_params = st.query_params
+oauth_code = query_params.get("code", "")
+oauth_shop_id = query_params.get("shop_id", "")
+
+# Simpan ke session state agar persist ke Tab 2
+if "oauth_code" not in st.session_state:
+    st.session_state.oauth_code = oauth_code if oauth_code else ""
+if "oauth_shop_id" not in st.session_state:
+    st.session_state.oauth_shop_id = oauth_shop_id if oauth_shop_id else ""
+
+# Update session state jika ada params baru di URL
+if oauth_code:
+    st.session_state.oauth_code = oauth_code
+if oauth_shop_id:
+    st.session_state.oauth_shop_id = oauth_shop_id
 
 # ===============================
 # SIGNATURE HELPERS
@@ -88,6 +101,10 @@ def get_report_history(shop_name):
 # ===============================
 st.title("📊 myAMS - Shopee Affiliate Conversion")
 
+# Notifikasi otomatis jika ada code dari redirect
+if st.session_state.oauth_code and st.session_state.oauth_shop_id:
+    st.success(f"✅ Authorization berhasil! Code dan Shop ID otomatis terisi di Tab 2. Code: {st.session_state.oauth_code[:20]}...")
+
 tab1, tab2, tab6 = st.tabs([
     "1️⃣ Authorisasi Affiliate",
     "2️⃣ Tukar Code → Token",
@@ -115,47 +132,66 @@ with tab1:
         auth_url = BASE_URL + path + "?" + urllib.parse.urlencode(params)
         st.success("Gunakan URL ini untuk authorize Affiliate / Seller")
         st.code(auth_url)
+        st.info("Setelah authorize, Anda akan di-redirect kembali ke app dengan code otomatis terisi di Tab 2.")
 
 # ===============================
-# TAB 2 — TOKEN
+# TAB 2 — TOKEN (AUTO-FILL DARI OAUTH)
 # ===============================
 with tab2:
     st.header("Tukar Code ke Access Token")
-
-    code = st.text_input("Code", value=oauth_code or "")
-    shop_id = st.text_input("Shop ID", value=oauth_shop_id or "")
+    
+    # Gunakan session state untuk auto-fill dari URL params
+    code = st.text_input("Code", value=st.session_state.oauth_code)
+    shop_id = st.text_input("Shop ID", value=st.session_state.oauth_shop_id)
     shop_name = st.text_input("Nama Toko", "MyAffiliateShop")
 
-    if st.button("🔄 Tukar Token"):
-        path = "/api/v2/auth/token/get"
-        ts = int(time.time())
-        sign = generate_sign_basic(path, ts)
+    # Tombol clear session jika perlu input manual
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🔄 Tukar Token"):
+            if not code or not shop_id:
+                st.error("Code dan Shop ID harus diisi!")
+            else:
+                path = "/api/v2/auth/token/get"
+                ts = int(time.time())
+                sign = generate_sign_basic(path, ts)
 
-        res = requests.post(
-            BASE_URL + path,
-            params={"partner_id": PARTNER_ID, "timestamp": ts, "sign": sign},
-            json={"code": code, "shop_id": int(shop_id), "partner_id": int(PARTNER_ID)}
-        ).json()
+                try:
+                    res = requests.post(
+                        BASE_URL + path,
+                        params={"partner_id": PARTNER_ID, "timestamp": ts, "sign": sign},
+                        json={"code": code, "shop_id": int(shop_id), "partner_id": int(PARTNER_ID)}
+                    ).json()
 
-        st.json(res)
+                    st.json(res)
 
-        if "access_token" in res:
-            save_token_to_db(shop_name, shop_id, res["access_token"], res["refresh_token"])
-            st.success("Token Affiliate berhasil disimpan")
+                    if "access_token" in res:
+                        save_token_to_db(shop_name, shop_id, res["access_token"], res["refresh_token"])
+                        st.success(f"✅ Token Affiliate berhasil disimpan untuk toko: {shop_name}")
+                        # Clear session state setelah berhasil
+                        st.session_state.oauth_code = ""
+                        st.session_state.oauth_shop_id = ""
+                    else:
+                        st.error(f"Gagal mendapatkan token: {res.get('message', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+    
+    with col2:
+        if st.button("🧹 Clear Auto-fill Data"):
+            st.session_state.oauth_code = ""
+            st.session_state.oauth_shop_id = ""
+            st.rerun()
 
 # ===============================
-# TAB 6 — AMS CONVERSION
-# ===============================
-# ===============================
-# TAB 6 — AMS CONVERSION (FIXED)
+# TAB 6 — AMS CONVERSION (ALL COLUMNS)
 # ===============================
 with tab6:
     st.header("🔁 Seller Conversion (AMS v2)")
-    st.info("Mengambil data conversion sesuai dokumentasi resmi Shopee AMS v2.")
+    st.info("Mengambil SEMUA data conversion termasuk kolom komisi dan pengeluaran.")
 
     shops = get_all_shops()
     if not shops:
-        st.warning("Belum ada toko.")
+        st.warning("Belum ada toko. Silakan authorize dan tukar token terlebih dahulu di Tab 1 & 2.")
     else:
         selected_shop = st.selectbox("Pilih Toko", shops)
 
@@ -188,9 +224,10 @@ with tab6:
                 page_size = 50
                 has_more = True
 
+                all_orders = []  # Simpan raw data untuk debug
                 rows = []
                 progress = st.progress(0)
-                info = st.empty()
+                status_text = st.empty()
 
                 while has_more:
                     ts = int(time.time())
@@ -202,90 +239,195 @@ with tab6:
                         "access_token": access_token,
                         "shop_id": int(shop_id),
                         "sign": sign,
-
                         "page_no": page_no,
                         "page_size": page_size,
-
                         "place_order_time_start": start_ts,
                         "place_order_time_end": end_ts,
                         "order_status": "Completed"
                     }
 
-                    resp = requests.get(BASE_URL + path, params=params).json()
+                    try:
+                        resp = requests.get(BASE_URL + path, params=params, timeout=30).json()
+                    except Exception as e:
+                        st.error(f"Request error: {str(e)}")
+                        break
 
                     if resp.get("error"):
-                        st.error(f"API Error: {resp.get('message')}")
+                        st.error(f"API Error: {resp.get('message', 'Unknown error')}")
+                        st.json(resp)
                         break
 
                     data = resp.get("response", {})
                     orders = data.get("list", [])
-
+                    
                     if not orders:
                         break
 
+                    all_orders.extend(orders)  # Simpan untuk debug
+
                     for order in orders:
+                        # Ambil semua field dari order level
+                        order_sn = order.get("order_sn")
+                        order_status = order.get("order_status")
+                        verified_status = order.get("verified_status")
+                        place_order_time = order.get("place_order_time")
+                        order_completed_time = order.get("order_completed_time")
+                        conversion_completed_time = order.get("conversion_completed_time")
+                        
+                        affiliate_id = order.get("affiliate_id")
+                        affiliate_name = order.get("affiliate_name")
+                        affiliate_username = order.get("affiliate_username")
+                        linked_mcn = order.get("linked_mcn")
+                        channel = order.get("channel")
+                        order_type = order.get("order_type")
+                        buyer_status = order.get("buyer_status")
+                        
+                        # Total level order (untuk referensi)
+                        total_brand_commission = order.get("total_brand_commission", 0)
+                        total_brand_commission_to_affiliate = order.get("total_brand_commission_to_affiliate", 0)
+                        total_brand_commission_to_mcn = order.get("total_brand_commission_to_mcn", 0)
+
                         for item in order.get("items", []):
-                            rows.append({
-                                "Order SN": order.get("order_sn"),
-                                "Order Status": order.get("order_status"),
-                                "Verified Status": order.get("verified_status"),
-                                "Place Order Time": order.get("place_order_time"),
-                                "Order Completed Time": order.get("order_completed_time"),
-                                "Conversion Completed Time": order.get("conversion_completed_time"),
+                            # Kalkulasi Pengeluaran (Commission yang harus dibayar seller)
+                            # Ini adalah komisi total yang keluar dari seller
+                            item_brand_commission = item.get("item_brand_commission", 0) or 0
+                            commission_to_affiliate = item.get("item_brand_commission_to_affiliate", 0) or 0
+                            commission_to_mcn = item.get("item_brand_commission_to_mcn", 0) or 0
+                            
+                            # Pengeluaran = Total komisi yang dibayarkan (biasanya ke affiliate + mcn)
+                            # Atau bisa juga menggunakan item_brand_commission (total potongan)
+                            pengeluaran_rp = item_brand_commission  # atau commission_to_affiliate + commission_to_mcn
 
-                                "Affiliate ID": order.get("affiliate_id"),
-                                "Affiliate Name": order.get("affiliate_name"),
-                                "Affiliate Username": order.get("affiliate_username"),
-                                "Linked MCN": order.get("linked_mcn"),
-                                "Channel": order.get("channel"),
-                                "Order Type": order.get("order_type"),
-                                "Buyer Status": order.get("buyer_status"),
-
+                            row_data = {
+                                # Order Info
+                                "Order SN": order_sn,
+                                "Order Status": order_status,
+                                "Verified Status": verified_status,
+                                "Place Order Time": place_order_time,
+                                "Order Completed Time": order_completed_time,
+                                "Conversion Completed Time": conversion_completed_time,
+                                
+                                # Affiliate Info
+                                "Affiliate ID": affiliate_id,
+                                "Affiliate Name": affiliate_name,
+                                "Affiliate Username": affiliate_username,
+                                "Linked MCN": linked_mcn,
+                                "Channel": channel,
+                                "Order Type": order_type,
+                                "Buyer Status": buyer_status,
+                                
+                                # Item Info
                                 "Item ID": item.get("item_id"),
                                 "Item Name": item.get("item_name"),
                                 "Model ID": item.get("model_id"),
+                                "Model Name": item.get("model_name"),  # Tambahan
                                 "L1 Category ID": item.get("l1_category_id"),
                                 "L2 Category ID": item.get("l2_category_id"),
                                 "L3 Category ID": item.get("l3_category_id"),
                                 "Promotion ID": item.get("promotion_id"),
-
+                                
+                                # Pricing & Quantity
                                 "Item Price": item.get("price"),
                                 "Qty": item.get("qty"),
                                 "Purchase Value": item.get("purchase_value"),
                                 "Refund Amount": item.get("refund_amount"),
-
-                                "Item Brand Commission": item.get("item_brand_commission"),
+                                
+                                # Commission Details (SEMUA KOLOM KOMISI)
+                                "Item Brand Commission": item_brand_commission,
                                 "Commission Rate to Affiliate": item.get("item_brand_commission_rate_to_affiliate"),
-                                "Commission to Affiliate": item.get("item_brand_commission_to_affiliate"),
+                                "Commission to Affiliate": commission_to_affiliate,
                                 "Commission Rate to MCN": item.get("item_brand_commission_rate_to_mcn"),
-                                "Commission to MCN": item.get("item_brand_commission_to_mcn"),
-
+                                "Commission to MCN": commission_to_mcn,
+                                
+                                # PENGELUARAN (Rp) - Kolom yang Anda minta
+                                "Pengeluaran(Rp)": pengeluaran_rp,
+                                
+                                # Campaign Info
                                 "Seller Campaign Type": item.get("seller_campaign_type"),
                                 "Attr Campaign ID": item.get("attr_campaign_id"),
-                                "Campaign Partner": item.get("campaign_partner")
-                            })
+                                "Campaign Partner": item.get("campaign_partner"),
+                                
+                                # Tambahan field lain yang mungkin ada
+                                "Shop ID": shop_id,
+                                "Page": page_no
+                            }
+                            rows.append(row_data)
 
                     has_more = data.get("has_more", False)
+                    total_count = data.get("total_count", 0)
+                    
+                    progress.progress(min(page_no * page_size / max(total_count, 1), 1.0))
+                    status_text.info(f"Page {page_no} | Rows: {len(rows)} | Has More: {has_more}")
+                    
                     page_no += 1
-                    progress.progress(min(page_no / 20, 1.0))
-                    info.info(f"Page {page_no - 1} • Total baris: {len(rows)}")
-
-                    time.sleep(0.4)
+                    time.sleep(0.5)  # Rate limiting
 
                 if rows:
                     df = pd.DataFrame(rows)
-                    st.success(f"Berhasil mengambil {len(df)} baris data.")
-                    st.dataframe(df, use_container_width=True)
+                    
+                    # Reorder columns untuk UX lebih baik
+                    priority_cols = [
+                        "Order SN", "Place Order Time", "Item Name", "Purchase Value", 
+                        "Pengeluaran(Rp)", "Commission to Affiliate", "Commission to MCN",
+                        "Item Brand Commission", "Affiliate Name", "Channel"
+                    ]
+                    other_cols = [c for c in df.columns if c not in priority_cols]
+                    df = df[priority_cols + other_cols]
+                    
+                    st.success(f"✅ Berhasil mengambil {len(df)} baris data dari {len(all_orders)} orders.")
+                    
+                    # Summary metrics
+                    metric_col1, metric_col2, metric_col3 = st.columns(3)
+                    with metric_col1:
+                        st.metric("Total Purchase Value", f"Rp {df['Purchase Value'].sum():,.0f}")
+                    with metric_col2:
+                        st.metric("Total Pengeluaran", f"Rp {df['Pengeluaran(Rp)'].sum():,.0f}")
+                    with metric_col3:
+                        st.metric("Total Commission to Affiliate", f"Rp {df['Commission to Affiliate'].sum():,.0f}")
+                    
+                    st.dataframe(df, use_container_width=True, height=600)
 
+                    # Export Excel
                     output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
                         df.to_excel(writer, index=False, sheet_name="AMS Conversion")
+                        
+                        # Auto-adjust column widths
+                        worksheet = writer.sheets["AMS Conversion"]
+                        for column in worksheet.columns:
+                            max_length = 0
+                            column_letter = column[0].column_letter
+                            for cell in column:
+                                try:
+                                    if len(str(cell.value)) > max_length:
+                                        max_length = len(str(cell.value))
+                                except:
+                                    pass
+                            adjusted_width = min(max_length + 2, 50)
+                            worksheet.column_dimensions[column_letter].width = adjusted_width
 
-                    st.download_button(
-                        "📥 Download Excel",
-                        data=output.getvalue(),
-                        file_name=f"AMS_Conversion_{selected_shop}_{start_date}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    excel_data = output.getvalue()
+                    
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            "📥 Download Excel",
+                            data=excel_data,
+                            file_name=f"AMS_Conversion_{selected_shop}_{start_date}_{end_date}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    with col_dl2:
+                        # Simpan ke DB juga
+                        if st.button("💾 Simpan ke Database"):
+                            save_report_to_db(selected_shop, f"{start_date} to {end_date}", excel_data)
+                            st.success("Report tersimpan di database!")
+                    
+                    # Debug: Tampilkan sample raw response
+                    with st.expander("🔍 Debug: Sample Raw Data (Order 1)"):
+                        if all_orders:
+                            st.json(all_orders[0])
+                            
                 else:
                     st.warning("Tidak ada data conversion ditemukan.")
+                    # Debug info
+                    st.info("Tips: Coba ubah rentang tanggal atau cek apakah ada order completed di periode tersebut.")
