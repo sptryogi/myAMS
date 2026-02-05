@@ -289,8 +289,8 @@ with tab6:
                     "page_no": page_no,
                     "page_size": page_size,
                     "place_order_time_start": start_ts,
-                    "place_order_time_end": end_ts,
-                    "order_status": "Completed"
+                    "place_order_time_end": end_ts
+                    # "order_status": "Completed"
                 }
                 
                 try:
