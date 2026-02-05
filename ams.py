@@ -438,7 +438,7 @@ with tab6:
         
         # Rename columns untuk UI lebih baik
         column_mapping = {
-            'order_sn': 'Order SN',
+            'order_sn': 'Kode Pesanan',
             'place_order_time': 'Waktu Order',
             'item_name': 'Nama Produk',
             'purchase_value': 'Nilai Beli (Rp)',
