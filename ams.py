@@ -12,6 +12,10 @@ import pandas as pd
 import datetime
 import io
 from supabase import create_client, Client
+import pytz
+
+WIB = pytz.timezone('Asia/Jakarta')
+UTC = pytz.UTC
 
 # ===============================
 # PAGE CONFIG
@@ -95,6 +99,21 @@ def save_report_to_db(shop_name, date_range, excel_bytes):
 def get_report_history(shop_name):
     res = supabase.table("shopee_reports").select("*").eq("shop_name", shop_name).order("created_at", desc=True).limit(10).execute()
     return res.data
+
+def format_to_wib(time_str):
+    """Konversi string timestamp ke format WIB"""
+    if not time_str:
+        return ""
+    try:
+        # Parse string timestamp (biasanya dari API dalam format tertentu)
+        # Jika API mengembalikan UTC timestamp dalam string
+        if isinstance(time_str, (int, float)):
+            dt_utc = datetime.datetime.fromtimestamp(time_str, UTC)
+            dt_wib = dt_utc.astimezone(WIB)
+            return dt_wib.strftime('%Y-%m-%d %H:%M:%S')
+        return str(time_str)
+    except:
+        return str(time_str)
     
 # ===============================
 # UI
@@ -211,9 +230,7 @@ with tab6:
         )
     
     # Default values - Gunakan timezone Indonesia (WIB/UTC+7)
-    import pytz
-    indonesia_tz = pytz.timezone('Asia/Jakarta')
-    now_id = datetime.datetime.now(indonesia_tz)
+    now_id = datetime.datetime.now(WIB)  # Gunakan WIB yang sudah didefinisikan di global
     today = now_id.date()
     
     if preset == "Hari Ini":
@@ -272,22 +289,22 @@ with tab6:
         
         # Helper: Convert date to timestamp (UTC untuk API Shopee)
         def to_ts(d, end=False):
-            # Buat datetime dengan timezone Indonesia
+            # Buat datetime dengan timezone WIB (Asia/Jakarta)
             if end:
                 dt = datetime.datetime.combine(d, datetime.time(23, 59, 59))
             else:
                 dt = datetime.datetime.combine(d, datetime.time(0, 0, 0))
             
-            # Set timezone Indonesia, kemudian convert ke UTC
-            dt_id = indonesia_tz.localize(dt)
-            dt_utc = dt_id.astimezone(pytz.UTC)
+            # ✅ PERBAIKAN: Gunakan WIB timezone yang sudah didefinisikan di global
+            dt_wib = WIB.localize(dt)
+            dt_utc = dt_wib.astimezone(UTC)
             return int(dt_utc.timestamp())
         
         start_ts = to_ts(start_date)
         end_ts = to_ts(end_date, end=True)
         
         # Debug info
-        st.caption(f"🕐 UTC Start: {datetime.datetime.fromtimestamp(start_ts, pytz.UTC)} | UTC End: {datetime.datetime.fromtimestamp(end_ts, pytz.UTC)}")
+        st.caption(f"🕐 WIB Start: {datetime.datetime.fromtimestamp(start_ts, UTC).astimezone(WIB)} | WIB End: {datetime.datetime.fromtimestamp(end_ts, UTC).astimezone(WIB)} | UTC Timestamp: {start_ts} - {end_ts}")
         
         # Progress tracking
         progress_bar = st.progress(0)
@@ -379,9 +396,9 @@ with tab6:
                 item_commission_mcn = item.get("item_brand_commission_to_mcn", 0) or 0
                 
                 # Format waktu ke WIB
-                place_time = order.get("place_order_time", "")
-                completed_time = order.get("order_completed_time", "")
-                conv_time = order.get("conversion_completed_time", "")
+                place_time = format_to_wib(order.get("place_order_time"))
+                completed_time = format_to_wib(order.get("order_completed_time"))
+                conv_time = format_to_wib(order.get("conversion_completed_time"))
                 
                 row = {
                     # === IDENTITAS PESANAN ===
