@@ -9,10 +9,12 @@ import hashlib
 import urllib.parse
 import requests
 import pandas as pd
-import datetime
+# import datetime
 import io
 from supabase import create_client, Client
 import pytz
+from datetime import datetime, timedelta, time as dt_time, date
+
 
 WIB = pytz.timezone('Asia/Jakarta')
 UTC = pytz.UTC
@@ -291,11 +293,11 @@ with tab6:
         def to_ts(d, end=False):
             # Buat datetime dengan timezone WIB (Asia/Jakarta)
             if end:
-                dt = datetime.datetime.combine(d, datetime.time(23, 59, 59))
+                dt = datetime.combine(d, time(23, 59, 59))
             else:
-                dt = datetime.datetime.combine(d, datetime.time(0, 0, 0))
+                dt = datetime.combine(d, time(0, 0, 0))
             
-            # ✅ PERBAIKAN: Gunakan WIB timezone yang sudah didefinisikan di global
+            # Localize ke WIB kemudian convert ke UTC
             dt_wib = WIB.localize(dt)
             dt_utc = dt_wib.astimezone(UTC)
             return int(dt_utc.timestamp())
@@ -304,7 +306,8 @@ with tab6:
         end_ts = to_ts(end_date, end=True)
         
         # Debug info
-        st.caption(f"🕐 WIB Start: {datetime.datetime.fromtimestamp(start_ts, UTC).astimezone(WIB)} | WIB End: {datetime.datetime.fromtimestamp(end_ts, UTC).astimezone(WIB)} | UTC Timestamp: {start_ts} - {end_ts}")
+        st.caption(f"🕐 Range WIB: {WIB.localize(datetime.combine(start_date, time.min)).strftime('%Y-%m-%d %H:%M')} s/d {WIB.localize(datetime.combine(end_date, time.max)).strftime('%Y-%m-%d %H:%M')}")
+        st.caption(f"🕐 UTC Timestamp: {start_ts} s/d {end_ts}")
         
         # Progress tracking
         progress_bar = st.progress(0)
