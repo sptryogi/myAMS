@@ -12,8 +12,8 @@ import pandas as pd
 # import datetime
 import io
 from supabase import create_client, Client
+from datetime import datetime, timedelta, time, date
 import pytz
-from datetime import datetime, timedelta, time as dt_time, date
 
 
 WIB = pytz.timezone('Asia/Jakarta')
@@ -232,7 +232,7 @@ with tab6:
         )
     
     # Default values - Gunakan timezone Indonesia (WIB/UTC+7)
-    now_id = datetime.datetime.now(WIB)  # Gunakan WIB yang sudah didefinisikan di global
+    now_id = datetime.now(WIB)  # Gunakan WIB yang sudah didefinisikan di global
     today = now_id.date()
     
     if preset == "Hari Ini":
@@ -293,9 +293,9 @@ with tab6:
         def to_ts(d, end=False):
             # Buat datetime dengan timezone WIB (Asia/Jakarta)
             if end:
-                dt = datetime.combine(d, time(23, 59, 59))
+                dt = datetime.combine(d, time(23, 59, 59))  # Gunakan time() bukan datetime.time()
             else:
-                dt = datetime.combine(d, time(0, 0, 0))
+                dt = datetime.combine(d, time(0, 0, 0))     # Gunakan time() bukan datetime.time()
             
             # Localize ke WIB kemudian convert ke UTC
             dt_wib = WIB.localize(dt)
