@@ -12,7 +12,8 @@ import pandas as pd
 import io
 from supabase import create_client, Client
 import datetime  # Module
-from datetime import datetime as dt, timedelta, time, date  # Class dengan alias
+from datetime import datetime as dt, timedelta, time as dt_time, date  # Class dengan alias
+import time as time_module  # ✅ Import time module dengan alias
 import pytz
 
 
@@ -293,9 +294,9 @@ with tab6:
         def to_ts(d, end=False):
             # Buat datetime dengan timezone WIB (Asia/Jakarta)
             if end:
-                dt_obj = dt.combine(d, time(23, 59, 59))  # ✅ Gunakan alias dt untuk datetime class
+                dt_obj = dt.combine(d, dt_time(23, 59, 59))  # ✅ Gunakan dt_time
             else:
-                dt_obj = dt.combine(d, time(0, 0, 0))     # ✅ Gunakan alias dt untuk datetime class
+                dt_obj = dt.combine(d, dt_time(0, 0, 0))     # ✅ Gunakan dt_time
             
             # Localize ke WIB kemudian convert ke UTC
             dt_wib = WIB.localize(dt_obj)
@@ -318,7 +319,7 @@ with tab6:
         
         with st.spinner("Mengambil data dari Shopee API..."):
             while True:
-                ts = int(time.time())
+                ts = int(time_module.time())
                 sign = generate_sign_full(path, ts, access_token, shop_id)
                 
                 params = {
@@ -366,7 +367,7 @@ with tab6:
                     break
                 
                 page_no += 1
-                time.sleep(0.3)
+                time_module.sleep(0.3)
         
         progress_bar.empty()
         status_text.empty()
