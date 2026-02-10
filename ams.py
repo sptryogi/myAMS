@@ -110,7 +110,7 @@ def format_to_wib(time_str):
         # Parse string timestamp (biasanya dari API dalam format tertentu)
         # Jika API mengembalikan UTC timestamp dalam string
         if isinstance(time_str, (int, float)):
-            dt_utc = datetime.datetime.fromtimestamp(time_str, UTC)
+            dt_utc = datetime.fromtimestamp(time_str, UTC)
             dt_wib = dt_utc.astimezone(WIB)
             return dt_wib.strftime('%Y-%m-%d %H:%M:%S')
         return str(time_str)
