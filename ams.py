@@ -506,7 +506,7 @@ with tab6:
                     # === LAINNYA ===
                     "Catatan Produk": NOTES_MAPPING.get(order.get("order_status"), ""),
                     "Platform": order.get("channel"),
-                    "Pengeluaran(Rp)": item.get("platform_fee") or item.get("total_expense") or item_commission
+                    "Pengeluaran(Rp)": item.get("platform_fee") or item.get("total_expense") or item_commission,
                     "Status Pemotongan": "Menunggu Pemotongan" if order.get("verified_status") != "Valid" else "Terverifikasi",
                     "Metode Pemotongan": "" if order.get("verified_status") != "Valid" else "Otomatis",
                     "Waktu Pemotongan": "" if not conv_time or conv_time == "--" else conv_time,
