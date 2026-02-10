@@ -435,15 +435,28 @@ with tab6:
             items = order.get("items", [])
             item_count = len(items) if items else 1  # Hindari division by zero
 
+            def safe_float(val):
+                try:
+                    return float(val) if val is not None else 0.0
+                except (ValueError, TypeError):
+                    return 0.0
+            
+            # Hitung total komisi per order dari semua items
             total_order_commission = sum(
-                (i.get("item_brand_commission", 0) or 0) for i in items
+                safe_float(i.get("item_brand_commission")) for i in items
             )
             total_order_commission_aff = sum(
-                (i.get("item_brand_commission_to_affiliate", 0) or 0) for i in items
+                safe_float(i.get("item_brand_commission_to_affiliate")) for i in items
             )
             total_order_commission_mcn = sum(
-                (i.get("item_brand_commission_to_mcn", 0) or 0) for i in items
+                safe_float(i.get("item_brand_commission_to_mcn")) for i in items
             )
+            
+            for item in items:
+                # Kalkulasi komisi per produk
+                item_commission = safe_float(item.get("item_brand_commission"))
+                item_commission_aff = safe_float(item.get("item_brand_commission_to_affiliate"))
+                item_commission_mcn = safe_float(item.get("item_brand_commission_to_mcn"))
             
             for item in items:
                 # Kalkulasi komisi per produk (rata-rata jika multiple items)
