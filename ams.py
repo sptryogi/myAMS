@@ -232,7 +232,7 @@ with tab6:
         )
     
     # Default values - Gunakan timezone Indonesia (WIB/UTC+7)
-    now_id = datetime.now(WIB)  # Gunakan WIB yang sudah didefinisikan di global
+    now_id = dt.now(WIB)  # Gunakan WIB yang sudah didefinisikan di global
     today = now_id.date()
     
     if preset == "Hari Ini":
