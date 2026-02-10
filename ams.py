@@ -9,10 +9,10 @@ import hashlib
 import urllib.parse
 import requests
 import pandas as pd
-import datetime
 import io
 from supabase import create_client, Client
-from datetime import datetime, timedelta, time, date
+import datetime  # Module
+from datetime import datetime as dt, timedelta, time, date  # Class dengan alias
 import pytz
 
 
@@ -110,7 +110,7 @@ def format_to_wib(time_str):
         # Parse string timestamp (biasanya dari API dalam format tertentu)
         # Jika API mengembalikan UTC timestamp dalam string
         if isinstance(time_str, (int, float)):
-            dt_utc = datetime.fromtimestamp(time_str, UTC)
+            dt_utc = dt.fromtimestamp(time_str, UTC)  # ✅ Gunakan alias dt
             dt_wib = dt_utc.astimezone(WIB)
             return dt_wib.strftime('%Y-%m-%d %H:%M:%S')
         return str(time_str)
@@ -239,24 +239,24 @@ with tab6:
         start_date = today
         end_date = today
     elif preset == "Kemarin":
-        start_date = today - datetime.timedelta(days=1)
-        end_date = today - datetime.timedelta(days=1)
+        start_date = today - timedelta(days=1)
+        end_date = today - timedelta(days=1)
     elif preset == "7 Hari Terakhir":
-        start_date = today - datetime.timedelta(days=7)
+        start_date = today - timedelta(days=7)
         end_date = today
     elif preset == "30 Hari Terakhir":
-        start_date = today - datetime.timedelta(days=30)
+        start_date = today - timedelta(days=30)
         end_date = today
     elif preset == "Bulan Ini":
         start_date = today.replace(day=1)
         end_date = today
     elif preset == "Bulan Lalu":
         first_day_this_month = today.replace(day=1)
-        end_date = first_day_this_month - datetime.timedelta(days=1)
+        end_date = first_day_this_month - timedelta(days=1)
         start_date = end_date.replace(day=1)
     else:  # Custom Range
         with date_col2:
-            start_date = st.date_input("Dari Tanggal", today - datetime.timedelta(days=7))
+            start_date = st.date_input("Dari Tanggal", today - timedelta(days=7))
         with date_col3:
             end_date = st.date_input("Sampai Tanggal", today)
     
@@ -293,12 +293,12 @@ with tab6:
         def to_ts(d, end=False):
             # Buat datetime dengan timezone WIB (Asia/Jakarta)
             if end:
-                dt = datetime.combine(d, time(23, 59, 59))  # Gunakan time() bukan datetime.time()
+                dt_obj = dt.combine(d, time(23, 59, 59))  # ✅ Gunakan alias dt untuk datetime class
             else:
-                dt = datetime.combine(d, time(0, 0, 0))     # Gunakan time() bukan datetime.time()
+                dt_obj = dt.combine(d, time(0, 0, 0))     # ✅ Gunakan alias dt untuk datetime class
             
             # Localize ke WIB kemudian convert ke UTC
-            dt_wib = WIB.localize(dt)
+            dt_wib = WIB.localize(dt_obj)
             dt_utc = dt_wib.astimezone(UTC)
             return int(dt_utc.timestamp())
         
