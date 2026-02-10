@@ -306,8 +306,6 @@ with tab6:
         end_ts = to_ts(end_date, end=True)
         
         # Debug info
-        st.caption(f"🕐 Range WIB: {WIB.localize(datetime.combine(start_date, time.min)).strftime('%Y-%m-%d %H:%M')} s/d {WIB.localize(datetime.combine(end_date, time.max)).strftime('%Y-%m-%d %H:%M')}")
-        st.caption(f"🕐 UTC Timestamp: {start_ts} s/d {end_ts}")
         
         # Progress tracking
         progress_bar = st.progress(0)
