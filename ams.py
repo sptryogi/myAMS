@@ -440,6 +440,18 @@ with tab6:
                     return float(val) if val is not None else 0.0
                 except (ValueError, TypeError):
                     return 0.0
+
+            def safe_percent(val):
+                """Safely convert percentage value to formatted string"""
+                if val is None:
+                    return "0%"
+                try:
+                    # Jika sudah string dengan %, bersihkan dulu
+                    if isinstance(val, str):
+                        val = val.replace('%', '').strip()
+                    return f"{int(float(val))}%"
+                except (ValueError, TypeError):
+                    return "0%"
             
             # Hitung total komisi per order dari semua items
             total_order_commission = sum(
@@ -507,9 +519,9 @@ with tab6:
                     # === KOMISI PER PRODUK (ITEM LEVEL) ===
                     "Estimasi Komisi per Produk(Rp)": item_commission,
                     "Estimasi Komisi Affiliate per Produk(Rp)": item_commission_aff,
-                    "Persentase Komisi Affiliate per Produk": f"{int(item.get('item_brand_commission_rate_to_affiliate', 0) or 0)}%" if item.get('item_brand_commission_rate_to_affiliate') else "0%",
+                    "Persentase Komisi Affiliate per Produk": safe_percent(item.get('item_brand_commission_rate_to_affiliate')),
                     "Estimasi Komisi MCN per Produk(Rp)": item_commission_mcn,
-                    "Persentase Komisi MCN per Produk": f"{int(item.get('item_brand_commission_rate_to_mcn', 0) or 0)}%" if item.get('item_brand_commission_rate_to_mcn') else "0%",
+                    "Persentase Komisi MCN per Produk": safe_percent(item.get('item_brand_commission_rate_to_mcn')),
                     
                     # === KOMISI PER PESANAN (ORDER LEVEL) ===
                     "Estimasi Komisi per Pesanan(Rp)": total_order_commission,
