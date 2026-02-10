@@ -277,6 +277,50 @@ with tab6:
     # Validate range (Shopee biasanya limit 30-90 hari)
     if delta_days > 90:
         st.warning("⚠️ Rentang waktu > 90 hari mungkin akan error dari API Shopee. Pertimbangkan untuk memecah periode.")
+
+    # TAMBAHKAN DI AWAL TAB 6 (sebelum while loop) - Dictionary mapping
+    STATUS_MAPPING = {
+        "Completed": "Selesai",
+        "Cancelled": "Dibatalkan", 
+        "To Confirm": "Belum Dibayar",
+        "To Ship": "Sedang Diproses",
+        "Shipping": "Dikirim",
+        "To Receive": "Dikirim",
+        "Unpaid": "Belum Dibayar"
+    }
+    
+    VERIFIED_STATUS_MAPPING = {
+        "Valid": "Terverifikasi",
+        "Invalid": "Tidak Valid",
+        "Pending": "Belum Diverifikasi",
+        "Processing": "Sedang Diproses"
+    }
+    
+    ORDER_TYPE_MAPPING = {
+        "Direct Order": "Pesanan Langsung",
+        "Indirect Order": "Pesanan Tidak Langsung"
+    }
+
+    CATEGORY_MAPPING = {
+        "100643": "Buku & Majalah",
+        "100777": "Buku Bacaan", 
+        "101564": "Agama & Filsafat"
+        # Tambahkan mapping lainnya sesuai kebutuhan
+    }
+
+    NOTES_MAPPING = {
+        "Completed": "",
+        "To Confirm": "Pesanan ini belum dibayar. Menunggu Pembeli untuk menyelesaikan pembayaran.",
+        "To Ship": "Status produk ini sedang ditinjau. Komisi hanya akan dibayarkan ketika pesanan selesai.",
+        "Shipping": "Pesanan sedang dikirim.",
+        "Cancelled": "Pesanan dibatalkan."
+    }
+
+    CAMPAIGN_TYPE_MAPPING = {
+        "Seller Open Campaign": "Komisi XTRA Produk Penjual",
+        "Open Campaign": "Komisi XTRA",
+        "Live Campaign": "Komisi Live"
+    }
     
     # =====================================================
     # FETCH DATA
@@ -390,6 +434,16 @@ with tab6:
             
             items = order.get("items", [])
             item_count = len(items) if items else 1  # Hindari division by zero
+
+            total_order_commission = sum(
+                (i.get("item_brand_commission", 0) or 0) for i in items
+            )
+            total_order_commission_aff = sum(
+                (i.get("item_brand_commission_to_affiliate", 0) or 0) for i in items
+            )
+            total_order_commission_mcn = sum(
+                (i.get("item_brand_commission_to_mcn", 0) or 0) for i in items
+            )
             
             for item in items:
                 # Kalkulasi komisi per produk (rata-rata jika multiple items)
@@ -405,8 +459,8 @@ with tab6:
                 row = {
                     # === IDENTITAS PESANAN ===
                     "Kode Pesanan": order.get("order_sn"),
-                    "Status Pesanan": order.get("order_status"),
-                    "Status Terverifikasi": order.get("verified_status"),
+                    "Status Pesanan": STATUS_MAPPING.get(order.get("order_status"), order.get("order_status")),
+                    "Status Terverifikasi": VERIFIED_STATUS_MAPPING.get(order.get("verified_status"), order.get("verified_status")),
                     "Waktu Pesanan": place_time,
                     "Waktu Pesanan Selesai": completed_time,
                     "Waktu Pesanan Terverifikasi": conv_time,
@@ -415,9 +469,9 @@ with tab6:
                     "Kode Produk": item.get("item_id"),
                     "Nama Produk": item.get("item_name"),
                     "ID Model": item.get("model_id"),
-                    "L1 Kategori Global": item.get("l1_category_id"),
-                    "L2 Kategori Global": item.get("l2_category_id"),
-                    "L3 Kategori Global": item.get("l3_category_id"),
+                    "L1 Kategori Global": CATEGORY_MAPPING.get(str(item.get("l1_category_id")), item.get("l1_category_id")),
+                    "L2 Kategori Global": CATEGORY_MAPPING.get(str(item.get("l2_category_id")), item.get("l2_category_id")),
+                    "L3 Kategori Global": CATEGORY_MAPPING.get(str(item.get("l3_category_id")), item.get("l3_category_id")),
                     
                     # === PROMO & HARGA ===
                     "Kode Promo": item.get("promotion_id"),
@@ -428,34 +482,34 @@ with tab6:
                     "Nama Affiliate": order.get("affiliate_name"),
                     "Username Affiliate": order.get("affiliate_username"),
                     "MCN Terhubung": order.get("linked_mcn"),
-                    "ID Komisi Pesanan": order.get("affiliate_id"),  # atau commission_id jika ada
+                    "ID Komisi Pesanan": item.get("commission_id") or order.get("commission_id") or order.get("open_id") or order.get("affiliate_id"),  # atau commission_id jika ada
                     "Partner Promo": item.get("campaign_partner"),
-                    "Jenis Promo": item.get("seller_campaign_type"),
+                    "Jenis Promo": CAMPAIGN_TYPE_MAPPING.get(item.get("seller_campaign_type"), item.get("seller_campaign_type")),
                     
                     # === FINANSIAL ===
                     "Nilai Pembelian(Rp)": item.get("purchase_value", 0),
                     "Jumlah Pengembalian(Rp)": item.get("refund_amount", 0),
-                    "Tipe Pesanan": order.get("order_type"),
+                    "Tipe Pesanan": ORDER_TYPE_MAPPING.get(order.get("order_type"), order.get("order_type")),
                     
                     # === KOMISI PER PRODUK (ITEM LEVEL) ===
                     "Estimasi Komisi per Produk(Rp)": item_commission,
                     "Estimasi Komisi Affiliate per Produk(Rp)": item_commission_aff,
-                    "Persentase Komisi Affiliate per Produk": item.get("item_brand_commission_rate_to_affiliate", 0),
+                    "Persentase Komisi Affiliate per Produk": f"{int(item.get('item_brand_commission_rate_to_affiliate', 0) or 0)}%" if item.get('item_brand_commission_rate_to_affiliate') else "0%",
                     "Estimasi Komisi MCN per Produk(Rp)": item_commission_mcn,
-                    "Persentase Komisi MCN per Produk": item.get("item_brand_commission_rate_to_mcn", 0),
+                    "Persentase Komisi MCN per Produk": f"{int(item.get('item_brand_commission_rate_to_mcn', 0) or 0)}%" if item.get('item_brand_commission_rate_to_mcn') else "0%",
                     
                     # === KOMISI PER PESANAN (ORDER LEVEL) ===
-                    "Estimasi Komisi per Pesanan(Rp)": order_commission,
-                    "Estimasi Komisi Affiliate per Pesanan(Rp)": order_commission_aff,
-                    "Estimasi Komisi MCN per Pesanan(Rp)": order_commission_mcn,
+                    "Estimasi Komisi per Pesanan(Rp)": total_order_commission,
+                    "Estimasi Komisi Affiliate per Pesanan(Rp)": total_order_commission_aff,
+                    "Estimasi Komisi MCN per Pesanan(Rp)": total_order_commission_mcn,
                     
                     # === LAINNYA ===
-                    "Catatan Produk": "",  # Tidak tersedia di API, dikosongkan
+                    "Catatan Produk": NOTES_MAPPING.get(order.get("order_status"), ""),
                     "Platform": order.get("channel"),
-                    "Pengeluaran(Rp)": item_commission,  # Sama dengan komisi per produk
-                    "Status Pemotongan": order.get("verified_status"),  # Menggunakan verified_status
-                    "Metode Pemotongan": "Otomatis",  # Default untuk AMS
-                    "Waktu Pemotongan": conv_time if conv_time else completed_time,  # Menggunakan conversion time
+                    "Pengeluaran(Rp)": item.get("platform_fee") or item.get("total_expense") or item_commission
+                    "Status Pemotongan": "Menunggu Pemotongan" if order.get("verified_status") != "Valid" else "Terverifikasi",
+                    "Metode Pemotongan": "" if order.get("verified_status") != "Valid" else "Otomatis",
+                    "Waktu Pemotongan": "" if not conv_time or conv_time == "--" else conv_time,
                 }
                 rows.append(row)
         
