@@ -454,6 +454,15 @@ with tab6:
                     return "0%"
             
             # Hitung total komisi per order dari semua items
+            # total_order_commission = sum(
+            #     safe_float(i.get("item_brand_commission")) for i in items
+            # )
+            # total_order_commission_aff = sum(
+            #     safe_float(i.get("item_brand_commission_to_affiliate")) for i in items
+            # )
+            # total_order_commission_mcn = sum(
+            #     safe_float(i.get("item_brand_commission_to_mcn")) for i in items
+            # )
             total_order_commission = sum(
                 safe_float(i.get("item_brand_commission")) for i in items
             )
@@ -464,17 +473,25 @@ with tab6:
                 safe_float(i.get("item_brand_commission_to_mcn")) for i in items
             )
             
-            for item in items:
-                # Kalkulasi komisi per produk
-                item_commission = safe_float(item.get("item_brand_commission"))
-                item_commission_aff = safe_float(item.get("item_brand_commission_to_affiliate"))
-                item_commission_mcn = safe_float(item.get("item_brand_commission_to_mcn"))
+            # Jika total dari items 0, coba ambil dari order level
+            if total_order_commission_aff == 0:
+                total_order_commission_aff = safe_float(order.get("total_brand_commission_to_affiliate"))
+            if total_order_commission == 0:
+                total_order_commission = safe_float(order.get("total_brand_commission"))
+            if total_order_commission_mcn == 0:
+                total_order_commission_mcn = safe_float(order.get("total_brand_commission_to_mcn"))
+            
             
             for item in items:
                 # Kalkulasi komisi per produk (rata-rata jika multiple items)
-                item_commission = item.get("item_brand_commission", 0) or 0
-                item_commission_aff = item.get("item_brand_commission_to_affiliate", 0) or 0
-                item_commission_mcn = item.get("item_brand_commission_to_mcn", 0) or 0
+                item_commission = safe_float(item.get("item_brand_commission"))
+                item_commission_aff = safe_float(item.get("item_brand_commission_to_affiliate"))
+                item_commission_mcn = safe_float(item.get("item_brand_commission_to_mcn"))
+
+                if total_order_commission_aff > 0:
+                    pengeluaran = int(total_order_commission_aff * 1.11)
+                else:
+                    pengeluaran = 0
                 
                 # Format waktu ke WIB
                 place_time = format_to_wib(order.get("place_order_time"))
@@ -531,7 +548,7 @@ with tab6:
                     # === LAINNYA ===
                     "Catatan Produk": NOTES_MAPPING.get(order.get("order_status"), ""),
                     "Platform": order.get("channel"),
-                    "Pengeluaran(Rp)": item.get("platform_fee") or item.get("total_expense") or item_commission,
+                    "Pengeluaran(Rp)": pengeluaran,
                     "Status Pemotongan": "Menunggu Pemotongan" if order.get("verified_status") != "Valid" else "Terverifikasi",
                     "Metode Pemotongan": "" if order.get("verified_status") != "Valid" else "Otomatis",
                     "Waktu Pemotongan": "" if not conv_time or conv_time == "--" else conv_time,
