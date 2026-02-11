@@ -481,6 +481,7 @@ with tab6:
             if total_order_commission_mcn == 0:
                 total_order_commission_mcn = safe_float(order.get("total_brand_commission_to_mcn"))
             
+            is_first_item = True
             
             for item in items:
                 # Kalkulasi komisi per produk (rata-rata jika multiple items)
@@ -492,6 +493,16 @@ with tab6:
                     pengeluaran = int(item_commission_aff * 1.11)
                 else:
                     pengeluaran = 0
+
+                if is_first_item:
+                    order_commission_aff_val = total_order_commission_aff
+                    order_commission_val = total_order_commission
+                    order_commission_mcn_val = total_order_commission_mcn
+                    is_first_item = False  # Set flag ke False untuk item berikutnya
+                else:
+                    order_commission_aff_val = 0
+                    order_commission_val = 0
+                    order_commission_mcn_val = 0
                 
                 # Format waktu ke WIB
                 place_time = format_to_wib(order.get("place_order_time"))
@@ -541,9 +552,9 @@ with tab6:
                     "Persentase Komisi MCN per Produk": safe_percent(item.get('item_brand_commission_rate_to_mcn')),
                     
                     # === KOMISI PER PESANAN (ORDER LEVEL) ===
-                    "Estimasi Komisi per Pesanan(Rp)": total_order_commission,
-                    "Estimasi Komisi Affiliate per Pesanan(Rp)": total_order_commission_aff,
-                    "Estimasi Komisi MCN per Pesanan(Rp)": total_order_commission_mcn,
+                    "Estimasi Komisi per Pesanan(Rp)": order_commission_val,
+                    "Estimasi Komisi Affiliate per Pesanan(Rp)": order_commission_aff_val,
+                    "Estimasi Komisi MCN per Pesanan(Rp)": order_commission_mcn_val,
                     
                     # === LAINNYA ===
                     "Catatan Produk": NOTES_MAPPING.get(order.get("order_status"), ""),
@@ -571,12 +582,7 @@ with tab6:
             "Metode Pemotongan", "Waktu Pemotongan"
         ]
 
-        # ✅ BARU: Keep first value only untuk "Estimasi Komisi Affiliate per Pesanan(Rp)"
-        df_temp = pd.DataFrame(rows)
-        df_temp['Estimasi Komisi Affiliate per Pesanan(Rp)'] = df_temp.groupby('Kode Pesanan')['Estimasi Komisi Affiliate per Pesanan(Rp)'].transform('first')
-        # Update rows kembali
-        rows = df_temp.to_dict('records')
-        
+
         df = pd.DataFrame(rows)
         
         # =====================================================
