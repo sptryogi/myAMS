@@ -488,8 +488,8 @@ with tab6:
                 item_commission_aff = safe_float(item.get("item_brand_commission_to_affiliate"))
                 item_commission_mcn = safe_float(item.get("item_brand_commission_to_mcn"))
 
-                if total_order_commission_aff > 0:
-                    pengeluaran = int(total_order_commission_aff * 1.11)
+                if item_commission_aff > 0:
+                    pengeluaran = int(item_commission_aff * 1.11)
                 else:
                     pengeluaran = 0
                 
@@ -570,6 +570,12 @@ with tab6:
             "Catatan Produk", "Platform", "Pengeluaran(Rp)", "Status Pemotongan",
             "Metode Pemotongan", "Waktu Pemotongan"
         ]
+
+        # ✅ BARU: Keep first value only untuk "Estimasi Komisi Affiliate per Pesanan(Rp)"
+        df_temp = pd.DataFrame(rows)
+        df_temp['Estimasi Komisi Affiliate per Pesanan(Rp)'] = df_temp.groupby('Kode Pesanan')['Estimasi Komisi Affiliate per Pesanan(Rp)'].transform('first')
+        # Update rows kembali
+        rows = df_temp.to_dict('records')
         
         df = pd.DataFrame(rows)
         
